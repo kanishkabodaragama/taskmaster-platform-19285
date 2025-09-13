@@ -6,6 +6,8 @@ import { createClient } from "@supabase/supabase-js";
  * Requires environment variables:
  * - REACT_APP_SUPABASE_URL
  * - REACT_APP_SUPABASE_KEY
+ *
+ * These are used to build the Supabase client which powers task stats and CRUD.
  */
 
 const SupabaseCtx = createContext(null);
