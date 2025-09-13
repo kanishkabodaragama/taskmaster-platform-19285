@@ -160,3 +160,56 @@ export async function listTasks(client, userId, { status, search } = {}) {
   if (error) throw error;
   return data || [];
 }
+
+// PUBLIC_INTERFACE
+export function useLiveTasks({ status, search } = {}) {
+  /** Return live-updating list of tasks for current user (title, description, status, due_date). */
+  const client = useSupabase();
+  const { session } = useSession();
+  const userId = session?.user?.id;
+
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    if (!client || !userId) return;
+    setError("");
+    setLoading(true);
+    try {
+      const data = await listTasks(client, userId, { status, search });
+      setTasks(data);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to load tasks:", e);
+      setError(e?.message || "Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
+  }, [client, userId, status, search]);
+
+  useEffect(() => {
+    if (!client || !userId) return;
+    let active = true;
+    (async () => { await load(); })();
+
+    const channel = client
+      .channel("tasks-list-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${userId}` },
+        () => {
+          // Re-fetch on any change for this user
+          setTimeout(() => { if (active) load(); }, 50);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      try { client.removeChannel(channel); } catch { /* ignore */ }
+    };
+  }, [client, userId, load]);
+
+  return useMemo(() => ({ tasks, loading, error, refresh: load }), [tasks, loading, error, load]);
+}

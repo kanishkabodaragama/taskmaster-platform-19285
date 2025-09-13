@@ -4,18 +4,21 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   Tooltip, Legend
 } from "chart.js";
-import { useTaskStats, createTask } from "../lib/tasks";
+import { useTaskStats, createTask, useLiveTasks } from "../lib/tasks";
 import { useSupabase, useSession } from "../supabase/SupabaseProvider";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 // PUBLIC_INTERFACE
 export default function Dashboard() {
-  /** Dashboard with KPI cards and charts fed by live Supabase stats and Create Task modal. */
+  /** Dashboard with KPI cards and charts fed by live Supabase stats and Create Task modal. Shows live task list. */
   const { stats, loading, error, refresh } = useTaskStats();
   const client = useSupabase();
   const { session } = useSession();
   const userId = session?.user?.id;
+
+  // Live task list (all tasks)
+  const { tasks, loading: tasksLoading, error: tasksError, refresh: reloadTasks } = useLiveTasks();
 
   // Modal state and form fields
   const [showCreate, setShowCreate] = useState(false);
@@ -65,7 +68,7 @@ export default function Dashboard() {
       const dueStr = `${yyyy}-${mm}-${dd}`;
       await createTask(client, userId, { title: "New task", description: "Quick created from dashboard", due_date: dueStr, status: "open" });
       // refresh will be triggered by realtime; manual fallback:
-      setTimeout(() => refresh(), 150);
+      setTimeout(() => { refresh(); reloadTasks(); }, 150);
     } catch (e) {
       // eslint-disable-next-line no-alert
       alert(e?.message || "Failed to create task");
@@ -115,12 +118,24 @@ export default function Dashboard() {
       });
       // Optimistic UX: close modal immediately
       closeModal();
-      // Realtime should update KPIs; also force a quick refresh as fallback
-      setTimeout(() => refresh(), 150);
+      // Realtime should update KPIs and list; also force quick refresh as fallback
+      setTimeout(() => { refresh(); reloadTasks(); }, 150);
     } catch (err) {
       setFormError(err?.message || "Failed to create task");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const fmtDate = (d) => {
+    if (!d) return "—";
+    try {
+      // Accepts yyyy-mm-dd or ISO string
+      const date = new Date(d);
+      if (Number.isNaN(date.getTime())) return d;
+      return date.toLocaleDateString();
+    } catch {
+      return d;
     }
   };
 
@@ -132,7 +147,7 @@ export default function Dashboard() {
           <div className="subtle">Overview of your work and performance metrics.</div>
         </div>
         <div>
-          <button className="btn" onClick={refresh} disabled={loading}>Refresh</button>
+          <button className="btn" onClick={() => { refresh(); reloadTasks(); }} disabled={loading || tasksLoading}>Refresh</button>
           <button className="btn" style={{ marginLeft: 8 }} onClick={onQuickNewTask} disabled={!userId}>Quick Task</button>
           <button className="btn primary" style={{ marginLeft: 8 }} onClick={openModal} disabled={!userId}>Create Task</button>
         </div>
@@ -171,12 +186,42 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="card">
-          <div className="h2">Recent activity</div>
-          <ul className="subtle" style={{ margin: 0, paddingLeft: 18 }}>
-            <li>Realtime updates are enabled for your tasks.</li>
-            <li>Use Create Task to test live stats.</li>
-            <li>Counts auto-refresh on any change.</li>
-          </ul>
+          <div className="h2">Your tasks</div>
+          {(tasksError) && <div style={{ color: "var(--error)" }}>{tasksError}</div>}
+          <div className="subtle" style={{ marginBottom: 8 }}>{tasksLoading ? "Loading…" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {tasks.map((t) => (
+              <div key={t.id} className="card" style={{ borderColor: "#E5E7EB" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{t.title}</div>
+                    {t.description && <div className="subtle" style={{ marginTop: 4 }}>{t.description}</div>}
+                    <div className="subtle" style={{ marginTop: 6 }}>
+                      Status: <span style={{ fontWeight: 600, color: t.status === "completed" ? "#065f46" : "#1d4ed8" }}>{t.status}</span>
+                      {" "}• Due: <span>{fmtDate(t.due_date)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: t.status === "completed" ? "#d1fae5" : "#eff6ff",
+                        color: t.status === "completed" ? "#065f46" : "#1d4ed8",
+                        border: "1px solid #E5E7EB"
+                      }}
+                    >
+                      {t.status === "completed" ? "✓ Completed" : "Open"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {(!tasksLoading && tasks.length === 0) && (
+              <div className="subtle">No tasks yet. Create your first task to get started.</div>
+            )}
+          </div>
         </div>
       </div>
 
