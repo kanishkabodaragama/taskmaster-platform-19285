@@ -35,8 +35,12 @@ App runs at http://localhost:3000
 Client is initialized from env vars inside src/supabase/SupabaseProvider.js.
 - REACT_APP_SUPABASE_URL
 - REACT_APP_SUPABASE_KEY
+Optional:
+- REACT_APP_SITE_URL (used by src/supabase/getURL.js to build dynamic redirects)
 
-Sign-up uses emailRedirectTo based on SITE_URL = window.location.origin.
+Sign-up uses emailRedirectTo based on dynamic URL from getURL(). Make sure redirect allowlist includes:
+- http://localhost:3000/**
+- your production domain /**
 
 ## RESTful API
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { getURL } from "./getURL";
 
 /**
  * Supabase context provider with session management and auth helpers.
@@ -8,6 +9,7 @@ import { createClient } from "@supabase/supabase-js";
  * - REACT_APP_SUPABASE_KEY
  *
  * These are used to build the Supabase client which powers task stats and CRUD.
+ * Auth flows use dynamic redirects based on getURL().
  */
 
 const SupabaseCtx = createContext(null);
@@ -69,11 +71,10 @@ export function SupabaseProvider({ children }) {
   };
 
   const signUp = async (email, password) => {
-    const SITE_URL = window.location.origin;
     const { error } = await client.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: SITE_URL + "/auth" }
+      options: { emailRedirectTo: `${getURL()}auth` }
     });
     if (error) throw error;
   };
