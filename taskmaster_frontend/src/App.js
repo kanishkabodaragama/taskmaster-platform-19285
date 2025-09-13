@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
 import Publish from "./pages/Publish";
 import { NotificationsToaster } from "./components/NotificationsToaster";
+import AIChatAssistant from "./components/AIChatAssistant";
 
 // App Shell with topnav and sidebar
 function Shell({ children }) {
@@ -85,6 +86,7 @@ function AppRouter() {
   return (
     <BrowserRouter>
       <NotificationsToaster />
+      <AIChatAssistant />
       <Routes>
         <Route path="/" element={<Shell><Landing /></Shell>} />
         <Route path="/auth" element={<Shell><AuthPage /></Shell>} />

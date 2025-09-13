@@ -14,10 +14,27 @@ Responsive web app with Ocean Professional design, Supabase authentication, dash
    Optional:
    - REACT_APP_API_BASE
 
+AI Assistant (OpenAI):
+- REACT_APP_OPENAI_API_KEY
+- REACT_APP_OPENAI_BASE_URL (optional, defaults to https://api.openai.com/v1)
+- REACT_APP_OPENAI_MODEL (optional, defaults to gpt-4o-mini)
+
 3) Run
    npm start
 
 App runs at http://localhost:3000
+
+## AI Assistant
+
+A floating "Ask AI" button opens a drawer with a chat assistant powered by OpenAI. With your permission, it can read your task list to provide better answers and propose actions (create/update tasks). Proposed actions are only executed after your confirmation.
+
+Setup:
+1) Set REACT_APP_OPENAI_API_KEY in your .env (see .env.example)
+2) Start the app. If the key is missing, the assistant will not be shown.
+
+Privacy:
+- Task context is only included if you enable the "Share task context" toggle.
+- The assistant returns an ACTION JSON proposal; you must confirm to apply changes.
 
 ## Features
 
