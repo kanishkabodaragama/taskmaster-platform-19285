@@ -4,14 +4,14 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   Tooltip, Legend
 } from "chart.js";
-import { useTaskStats, createTask, useLiveTasks } from "../lib/tasks";
+import { useTaskStats, createTask, useLiveTasks, updateTask } from "../lib/tasks";
 import { useSupabase, useSession } from "../supabase/SupabaseProvider";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 // PUBLIC_INTERFACE
 export default function Dashboard() {
-  /** Dashboard with KPI cards and charts fed by live Supabase stats and Create Task modal. Shows live task list. */
+  /** Dashboard with KPI cards and charts fed by live Supabase stats. Includes create and edit task modals with realtime refresh. */
   const { stats, loading, error, refresh } = useTaskStats();
   const client = useSupabase();
   const { session } = useSession();
@@ -20,7 +20,7 @@ export default function Dashboard() {
   // Live task list (all tasks)
   const { tasks, loading: tasksLoading, error: tasksError, refresh: reloadTasks } = useLiveTasks();
 
-  // Modal state and form fields
+  // Create modal state and form fields
   const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -28,6 +28,16 @@ export default function Dashboard() {
   const [status, setStatus] = useState("open");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit modal state and fields
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editStatus, setEditStatus] = useState("open");
+  const [editError, setEditError] = useState("");
+  const [editing, setEditing] = useState(false);
 
   const kpis = useMemo(()=>[
     { key: "total", label: "Total Tasks", value: stats.total, hint: "" },
@@ -139,6 +149,74 @@ export default function Dashboard() {
     }
   };
 
+  // Helpers for editing
+  const dateOnly = (value) => {
+    if (!value) return "";
+    // Normalize to YYYY-MM-DD for input[type="date"]
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) {
+      // If already YYYY-MM-DD, return as-is
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+      return "";
+    }
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const openEditModal = (task) => {
+    setEditingTask(task);
+    setEditTitle(task.title || "");
+    setEditDescription(task.description || "");
+    setEditDueDate(dateOnly(task.due_date));
+    setEditStatus(task.status || "open");
+    setEditError("");
+    setShowEdit(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEdit(false);
+    setEditingTask(null);
+  };
+
+  const validateEdit = () => {
+    if (!editTitle.trim()) return "Title is required";
+    if (editTitle.length > 200) return "Title is too long (max 200 characters)";
+    if (editDescription.length > 2000) return "Description is too long (max 2000 characters)";
+    if (editDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(editDueDate)) return "Due date must be YYYY-MM-DD";
+    if (!["open", "completed"].includes(editStatus)) return "Invalid status";
+    return "";
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    setEditError("");
+    const v = validateEdit();
+    if (v) {
+      setEditError(v);
+      return;
+    }
+    setEditing(true);
+    try {
+      await updateTask(client, editingTask.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        due_date: editDueDate || null,
+        status: editStatus
+      });
+      // Close quickly for optimistic UX
+      closeEditModal();
+      // Realtime should update the list and KPIs; add fallback refresh
+      setTimeout(() => { reloadTasks(); refresh(); }, 120);
+    } catch (err) {
+      setEditError(err?.message || "Failed to update task");
+    } finally {
+      setEditing(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -201,7 +279,7 @@ export default function Dashboard() {
                       {" "}• Due: <span>{fmtDate(t.due_date)}</span>
                     </div>
                   </div>
-                  <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <span
                       style={{
                         fontSize: 12,
@@ -214,6 +292,14 @@ export default function Dashboard() {
                     >
                       {t.status === "completed" ? "✓ Completed" : "Open"}
                     </span>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => openEditModal(t)}
+                      aria-label={`Edit task ${t.title}`}
+                    >
+                      Edit
+                    </button>
                   </div>
                 </div>
               </div>
@@ -265,6 +351,53 @@ export default function Dashboard() {
                 <button type="button" className="btn" onClick={closeModal} disabled={submitting}>Cancel</button>
                 <button type="submit" className="btn primary" disabled={submitting || !userId}>
                   {submitting ? "Creating..." : "Create task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEdit && (
+        <div role="dialog" aria-modal="true" aria-labelledby="editTaskTitle"
+             style={{
+               position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)",
+               display: "grid", placeItems: "center", padding: 16, zIndex: 100
+             }}>
+          <div className="card" style={{ width: "min(560px, 100%)", maxWidth: "100%" }}>
+            <div className="page-header" style={{ marginBottom: 8 }}>
+              <div className="h1" id="editTaskTitle">Edit Task</div>
+              <div>
+                <button className="btn" type="button" onClick={closeEditModal} disabled={editing}>Close</button>
+              </div>
+            </div>
+            <form onSubmit={saveEdit}>
+              <div className="form-row">
+                <label htmlFor="editTaskTitleInput">Title</label>
+                <input id="editTaskTitleInput" className="input" value={editTitle} onChange={e=>setEditTitle(e.target.value)} required maxLength={200} />
+              </div>
+              <div className="form-row">
+                <label htmlFor="editTaskDesc">Description</label>
+                <textarea id="editTaskDesc" className="input" rows={4} value={editDescription} onChange={e=>setEditDescription(e.target.value)} maxLength={2000} />
+              </div>
+              <div className="form-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label htmlFor="editTaskDue">Due date</label>
+                  <input id="editTaskDue" className="input" type="date" value={editDueDate} onChange={e=>setEditDueDate(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="editTaskStatus">Status</label>
+                  <select id="editTaskStatus" className="input" value={editStatus} onChange={e=>setEditStatus(e.target.value)}>
+                    <option value="open">Open</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+              {editError && <div style={{ color: "var(--error)", marginBottom: 8 }}>{editError}</div>}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" className="btn" onClick={closeEditModal} disabled={editing}>Cancel</button>
+                <button type="submit" className="btn primary" disabled={editing || !userId}>
+                  {editing ? "Saving..." : "Save changes"}
                 </button>
               </div>
             </form>
