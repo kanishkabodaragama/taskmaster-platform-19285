@@ -170,6 +170,17 @@ body {
   padding: 12px 14px; border-radius: 12px; box-shadow: var(--shadow);
 }
 
+/* Simple utility class if needed for overlays */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17,24,39,0.45);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 100;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .main { grid-template-columns: 1fr; }

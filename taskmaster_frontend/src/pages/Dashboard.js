@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
@@ -11,11 +11,20 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 // PUBLIC_INTERFACE
 export default function Dashboard() {
-  /** Dashboard with KPI cards and charts fed by live Supabase stats. */
+  /** Dashboard with KPI cards and charts fed by live Supabase stats and Create Task modal. */
   const { stats, loading, error, refresh } = useTaskStats();
   const client = useSupabase();
   const { session } = useSession();
   const userId = session?.user?.id;
+
+  // Modal state and form fields
+  const [showCreate, setShowCreate] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState("open");
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const kpis = useMemo(()=>[
     { key: "total", label: "Total Tasks", value: stats.total, hint: "" },
@@ -63,6 +72,58 @@ export default function Dashboard() {
     }
   };
 
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setDueDate("");
+    setStatus("open");
+    setFormError("");
+  };
+
+  const openModal = () => {
+    resetForm();
+    setShowCreate(true);
+  };
+
+  const closeModal = () => {
+    setShowCreate(false);
+  };
+
+  const validate = () => {
+    if (!title.trim()) return "Title is required";
+    if (title.length > 200) return "Title is too long (max 200 characters)";
+    if (description.length > 2000) return "Description is too long (max 2000 characters)";
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return "Due date must be YYYY-MM-DD";
+    return "";
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setFormError("");
+    const v = validate();
+    if (v) {
+      setFormError(v);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createTask(client, userId, {
+        title: title.trim(),
+        description: description.trim(),
+        due_date: dueDate || null,
+        status
+      });
+      // Optimistic UX: close modal immediately
+      closeModal();
+      // Realtime should update KPIs; also force a quick refresh as fallback
+      setTimeout(() => refresh(), 150);
+    } catch (err) {
+      setFormError(err?.message || "Failed to create task");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -72,7 +133,8 @@ export default function Dashboard() {
         </div>
         <div>
           <button className="btn" onClick={refresh} disabled={loading}>Refresh</button>
-          <button className="btn primary" style={{ marginLeft: 8 }} onClick={onQuickNewTask} disabled={!userId}>New Task</button>
+          <button className="btn" style={{ marginLeft: 8 }} onClick={onQuickNewTask} disabled={!userId}>Quick Task</button>
+          <button className="btn primary" style={{ marginLeft: 8 }} onClick={openModal} disabled={!userId}>Create Task</button>
         </div>
       </div>
 
@@ -112,11 +174,58 @@ export default function Dashboard() {
           <div className="h2">Recent activity</div>
           <ul className="subtle" style={{ margin: 0, paddingLeft: 18 }}>
             <li>Realtime updates are enabled for your tasks.</li>
-            <li>Use New Task to test live stats.</li>
+            <li>Use Create Task to test live stats.</li>
             <li>Counts auto-refresh on any change.</li>
           </ul>
         </div>
       </div>
+
+      {showCreate && (
+        <div role="dialog" aria-modal="true" aria-labelledby="createTaskTitle"
+             style={{
+               position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)",
+               display: "grid", placeItems: "center", padding: 16, zIndex: 100
+             }}>
+          <div className="card" style={{ width: "min(560px, 100%)", maxWidth: "100%" }}>
+            <div className="page-header" style={{ marginBottom: 8 }}>
+              <div className="h1" id="createTaskTitle">Create Task</div>
+              <div>
+                <button className="btn" type="button" onClick={closeModal} disabled={submitting}>Close</button>
+              </div>
+            </div>
+            <form onSubmit={submit}>
+              <div className="form-row">
+                <label htmlFor="taskTitle">Title</label>
+                <input id="taskTitle" className="input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g., Prepare quarterly report" required maxLength={200} />
+              </div>
+              <div className="form-row">
+                <label htmlFor="taskDesc">Description</label>
+                <textarea id="taskDesc" className="input" rows={4} value={description} onChange={e=>setDescription(e.target.value)} placeholder="Optional details…" maxLength={2000} />
+              </div>
+              <div className="form-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label htmlFor="taskDue">Due date</label>
+                  <input id="taskDue" className="input" type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="taskStatus">Status</label>
+                  <select id="taskStatus" className="input" value={status} onChange={e=>setStatus(e.target.value)}>
+                    <option value="open">Open</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+              {formError && <div style={{ color: "var(--error)", marginBottom: 8 }}>{formError}</div>}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" className="btn" onClick={closeModal} disabled={submitting}>Cancel</button>
+                <button type="submit" className="btn primary" disabled={submitting || !userId}>
+                  {submitting ? "Creating..." : "Create task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
